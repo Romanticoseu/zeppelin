@@ -8,7 +8,7 @@
       "SPARK_HOME": {
         "envName": "SPARK_HOME",
         "propertyName": "SPARK_HOME",
-        "defaultValue": "",
+        "defaultValue": "/ppml/spark-3.1.3",
         "description": "Location of spark distribution",
         "type": "string"
       },
@@ -161,10 +161,107 @@
         "defaultValue": true,
         "description": "Whether show the spark deprecated message, spark 2.2 and before are deprecated. Zeppelin will display warning message by default",
         "type": "checkbox"
+      },
+      "spark.kubernetes.sgx.enabled": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.enabled",
+        "defaultValue": true,
+        "description": "Whether spark executor run on sgx",
+        "type": "checkbox"
+      },
+      "spark.kubernetes.sgx.driver.mem": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.driver.mem",
+        "defaultValue": "2g",
+        "description": "Amount of memory to use for the driver process on sgx",
+        "type": "string"
+      },
+      "spark.kubernetes.sgx.driver.jvm.mem": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.driver.jvm.mem",
+        "defaultValue": "2g",
+        "description": "Amount of memory to use for the driver jvm on sgx",
+        "type": "string"  
+      },
+      "spark.kubernetes.sgx.executor.mem": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.executor.mem",
+        "defaultValue": "2g",
+        "description": "Amount of memory to use for the executor process on sgx",
+        "type": "string"
+      },
+      "spark.kubernetes.sgx.executor.jvm.mem": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.executor.jvm.mem",
+        "defaultValue": "2g",
+        "description": "Amount of memory to use for the executor jvm on sgx",
+        "type": "string"
+      },
+      "spark.kubernetes.sgx.log.level": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.sgx.log.level",
+        "defaultValue": "error",
+        "description": "Describe the type and severity of a logged event based on the severity of the impact on users and the urgency of response",
+        "type": "string"
+      },
+      "spark.network.timeout": {
+        "envName": null,
+        "propertyName": "spark.network.timeout",
+        "defaultValue": "10000000",
+        "description": "How long you are willing to wait for an operation in a Workstation client before your request for that operation is canceled",
+        "type": "number"
+      },
+      "spark.executor.heartbeatInterval": {
+        "envName": null,
+        "propertyName": "spark.executor.heartbeatInterval",
+        "defaultValue": "10000000",
+        "description": "Interval to probe the status of executor",
+        "type": "number" 
+      },
+      "spark.python.use.daemon": {
+        "envName": null,
+        "propertyName": "spark.python.use.daemon",
+        "defaultValue": false,
+        "description": "Because forking processes from Java is expensive, we prefer to launch a single Python daemon, in this case, we set it to false",
+        "type": "checkbox"
+      },
+      "spark.python.worker.reuse": {
+        "envName": null,
+        "propertyName": "spark.python.worker.reuse",
+        "defaultValue": false,
+        "description": "Reuse Python worker or not. If yes, it will use a fixed number of Python workers, does not need to fork() a Python process for every task.",
+        "type": "checkbox"
+      },
+      "spark.kubernetes.authenticate.driver.serviceAccountName": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.authenticate.driver.serviceAccountName",
+        "defaultValue": "spark",
+        "description": "Specify a custom service account that has the right role granted.",
+        "type": "string"
+      },
+      "spark.kubernetes.executor.deleteOnTermination": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.executor.deleteOnTermination",
+        "defaultValue": false,
+        "description": "Specify whether executor pods should be deleted in case of failure or normal termination",
+        "type": "checkbox"
+      },
+      "spark.kubernetes.driver.podTemplateFile": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.driver.podTemplateFile",
+        "defaultValue": "/ppml/spark-driver-template.yaml",
+        "description": "Specify the local file that contains the driver pod template.",
+        "type": "string"
+      },
+      "spark.kubernetes.executor.podTemplateFile": {
+        "envName": null,
+        "propertyName": "spark.kubernetes.executor.podTemplateFile",
+        "defaultValue": "/ppml/spark-executor-template.yaml",
+        "description": "Specify the local file that contains the executor pod template.",
+        "type": "string"
       }
     },
-    "editor": {
-      "language": "scala",
+    "editor": {      "language": "scala",
       "editOnDblClick": false,
       "completionKey": "TAB",
       "completionSupport": true

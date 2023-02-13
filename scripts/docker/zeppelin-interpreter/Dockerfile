@@ -13,14 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG ZEPPELIN_DISTRIBUTION_IMAGE=zeppelin-distribution:latest
+ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.11.0-SNAPSHOT
 FROM $ZEPPELIN_DISTRIBUTION_IMAGE AS zeppelin-distribution
 
 FROM ubuntu:20.04
 
 LABEL maintainer="Apache Software Foundation <dev@zeppelin.apache.org>"
 
-ARG version="0.10.0"
+ARG version="0.11.0-SNAPSHOT"
 
 ENV VERSION="${version}" \
     ZEPPELIN_HOME="/opt/zeppelin"
@@ -54,6 +54,8 @@ COPY conda_packages.txt /conda_packages.txt
 # Some python packages are not available via conda, so we are using pip
 COPY pip_packages.txt /pip_packages.txt
 RUN set -ex && \
+    export http_proxy="http://child-prc.intel.com:913/" && \
+    export https_proxy="http://child-prc.intel.com:913/" && \
     wget -nv https://repo.anaconda.com/miniconda/Miniconda3-${miniconda_version}-Linux-x86_64.sh -O miniconda.sh && \
     echo "${miniconda_sha256} miniconda.sh" > anaconda.sha256 && \
     sha256sum --strict -c anaconda.sha256 && \

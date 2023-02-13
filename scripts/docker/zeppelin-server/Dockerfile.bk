@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.11.0-SNAPSHOT
+ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.10.1
 FROM $ZEPPELIN_DISTRIBUTION_IMAGE AS zeppelin-distribution
 
 # Prepare all interpreter settings for Zeppelin server
@@ -36,7 +36,7 @@ RUN set -ex && \
     apt-get autoclean && \
     apt-get clean
 
-ARG version="0.11.0-SNAPSHOT"
+ARG version="0.10.1"
 
 ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
@@ -48,7 +48,7 @@ ENV LANG=en_US.UTF-8 \
     ZEPPELIN_WAR_TEMPDIR="/tmp/webapps"
 
 # Copy Zeppelin related files
-COPY --from=zeppelin-distribution /opt/zeppelin/zeppelin-web-${VERSION}.war ${ZEPPELIN_HOME}/
+COPY --from=zeppelin-distribution //opt/zeppelin/zeppelin-web-${VERSION}.war ${ZEPPELIN_HOME}/
 COPY --from=zeppelin-distribution /opt/zeppelin/zeppelin-web-angular-${VERSION}.war ${ZEPPELIN_HOME}/
 COPY --from=zeppelin-distribution /opt/zeppelin/conf ${ZEPPELIN_HOME}/conf
 COPY --from=zeppelin-distribution /opt/zeppelin/bin ${ZEPPELIN_HOME}/bin
