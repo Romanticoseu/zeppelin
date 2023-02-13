@@ -1,0 +1,618 @@
+diff --git a/Dockerfile b/Dockerfile
+index 5d78aff9a..1c83390f3 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -17,13 +17,16 @@
+ FROM openjdk:8 as builder
+ ADD . /workspace/zeppelin
+ WORKDIR /workspace/zeppelin
+-ENV MAVEN_OPTS="-Xms1024M -Xmx2048M -XX:MaxMetaspaceSize=1024m -XX:-UseGCOverheadLimit -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn"
++ENV MAVEN_OPTS="-Xms1024M -Xmx2048M -XX:MaxMetaspaceSize=1024m -XX:-UseGCOverheadLimit -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn -Dhttp.proxyHost=child-prc.intel.com -Dhttp.proxyPort=913 -Dhttps.proxyHost=child-prc.intel.com -Dhttps.proxyPort=913"
+ # Allow npm and bower to run with root privileges
+-RUN echo "unsafe-perm=true" > ~/.npmrc && \
++RUN export http_proxy="http://child-prc.intel.com:913/" && \
++    export https_proxy="http://child-prc.intel.com:913/" && \
++    echo "unsafe-perm=true" > ~/.npmrc && \
+     echo '{ "allow_root": true }' > ~/.bowerrc && \
+     ./mvnw -B package -DskipTests -Pbuild-distr -Pspark-3.2 -Pinclude-hadoop -Phadoop3 -Pspark-scala-2.12 -Pweb-angular -Pweb-dist && \
+     # Example with doesn't compile all interpreters
+-    # ./mvnw -B package -DskipTests -Pbuild-distr -Pspark-3.2 -Pinclude-hadoop -Phadoop3 -Pspark-scala-2.12 -Pweb-angular -Pweb-dist -pl '!groovy,!submarine,!livy,!hbase,!file,!flink' && \
++    #./mvnw -B package -DskipTests -Pbuild-distr -Pspark-3.2 -Pinclude-hadoop -Phadoop3 -Pspark-scala-2.12 -Pweb-angular -Pweb-dist -pl '!groovy,!submarine,!livy,!hbase,!file,!flink' && \
++    #./mvnw -B package -DskipTests -Pbuild-distr -Pspark-3.2 -Pinclude-hadoop -Phadoop3 -Pspark-scala-2.12 -Pweb-angular -Pweb-dist -pl '!groovy,!submarine,!livy,!hbase,!file,!flink,!mongodb,!jdbc,!flink-cmd,!influxdb,!cassandra,!elasticsearch,!bigquery,!alluxio,!neo4j' && \
+     mv /workspace/zeppelin/zeppelin-distribution/target/zeppelin-*/zeppelin-* /opt/zeppelin/ && \
+     # Removing stuff saves time, because docker creates a temporary layer
+     rm -rf ~/.m2 && \
+diff --git a/k8s/interpreter/100-interpreter-spec.yaml b/k8s/interpreter/100-interpreter-spec.yaml
+index b21e4792c..851d545a0 100644
+--- a/k8s/interpreter/100-interpreter-spec.yaml
++++ b/k8s/interpreter/100-interpreter-spec.yaml
+@@ -90,17 +90,17 @@ spec:
+   {% if zeppelin.k8s.interpreter.group.name == "spark" %}
+     volumeMounts:
+     - name: spark-home
+-      mountPath: /spark
++      mountPath: /ppml
+   initContainers:
+   - name: spark-home-init
+     image: {{zeppelin.k8s.spark.container.image}}
+     {% if zeppelin.k8s.spark.container.imagePullPolicy is defined %}
+     imagePullPolicy: {{zeppelin.k8s.spark.container.imagePullPolicy}}
+     {% endif %}
+-    command: ["sh", "-c", "cp -r /opt/spark/* /spark/"]
++    command: ["sh", "-c", "cp -r /ppml/* /ppml-home/"]
+     volumeMounts:
+     - name: spark-home
+-      mountPath: /spark
++      mountPath: /ppml-home
+   {% if zeppelin.k8s.interpreter.imagePullSecrets is defined %}
+   imagePullSecrets:
+   {% for secret in zeppelin.k8s.interpreter.imagePullSecrets.split(',') %}
+diff --git a/k8s/zeppelin-server.yaml b/k8s/zeppelin-server.yaml
+index eba48e38d..dcfd29154 100644
+--- a/k8s/zeppelin-server.yaml
++++ b/k8s/zeppelin-server.yaml
+@@ -27,15 +27,16 @@ data:
+   #
+   # Default value is 'local.zeppelin-project.org' while it points 127.0.0.1 and `kubectl port-forward zeppelin-server` will give localhost to connects.
+   # If you have your ingress controller configured to connect to `zeppelin-server` service and have a domain name for it (with wildcard subdomain point the same address), you can replace serviceDomain field with your own domain.
+-  SERVICE_DOMAIN: local.zeppelin-project.org:8080
+-  ZEPPELIN_K8S_SPARK_CONTAINER_IMAGE: spark:2.4.5
+-  ZEPPELIN_K8S_CONTAINER_IMAGE: zeppelin-interpreter:0.11.0-SNAPSHOT
++  SERVICE_DOMAIN: 0.0.0.0:8080
++  #ZEPPELIN_K8S_SPARK_CONTAINER_IMAGE: 10.239.45.10/arda/spark:3.1.2
++  ZEPPELIN_K8S_SPARK_CONTAINER_IMAGE: 10.239.45.10/arda/intelanalytics/bigdl-ppml-trusted-bigdata-gramine-reference-32g:2.3.0-SNAPSHOT
++  ZEPPELIN_K8S_CONTAINER_IMAGE: 10.239.45.10/arda/zeppelin-interpreter:0.11.0-SNAPSHOT
+   ZEPPELIN_HOME: /opt/zeppelin
+   ZEPPELIN_SERVER_RPC_PORTRANGE: 12320:12320
+   # default value of 'master' property for spark interpreter.
+-  SPARK_MASTER: k8s://https://kubernetes.default.svc
++  SPARK_MASTER: k8s://https://172.168.0.205:6443
+   # default value of 'SPARK_HOME' property for spark interpreter.
+-  SPARK_HOME: /spark
++  SPARK_HOME: /ppml/spark-3.1.3
+ ---
+ apiVersion: v1
+ kind: ConfigMap
+@@ -115,7 +116,7 @@ spec:
+             path: nginx.conf
+       containers:
+       - name: zeppelin-server
+-        image: zeppelin-server:0.11.0-SNAPSHOT
++        image: 10.239.45.10/arda/zeppelin-server:0.11.0-SNAPSHOT
+         command: ["sh", "-c", "$(ZEPPELIN_HOME)/bin/zeppelin.sh"]
+         lifecycle:
+           preStop:
+@@ -143,13 +144,13 @@ spec:
+         envFrom:
+         - configMapRef:
+             name: zeppelin-server-conf-map
+-      # volumeMounts:
+-      #  - name: zeppelin-server-notebook-volume     # configure this to persist notebook
+-      #    mountPath: /zeppelin/notebook
+-      #  - name: zeppelin-server-conf                # configure this to persist Zeppelin configuration
+-      #    mountPath: /zeppelin/conf
+-      #  - name: zeppelin-server-custom-k8s          # configure this to mount customized Kubernetes spec for interpreter
+-      #    mountPath: /zeppelin/k8s
++        # volumeMounts:
++        # - name: zeppelin-server-notebook-volume     # configure this to persist notebook
++        #   mountPath: /zeppelin/notebook
++        # - name: zeppelin-server-conf                # configure this to persist Zeppelin configuration
++        #   mountPath: /zeppelin/conf
++        # - name: zeppelin-server-custom-k8s          # configure this to mount customized Kubernetes spec for interpreter
++        #   mountPath: /zeppelin/k8s
+       - name: zeppelin-server-gateway
+         image: nginx:1.14.0
+         command: ["/bin/sh", "-c"]
+@@ -225,3 +226,4 @@ roleRef:
+   kind: ClusterRole
+   name: zeppelin-server-role
+   apiGroup: rbac.authorization.k8s.io
++  
+diff --git a/k8s/zeppelin-server.yaml.bk b/k8s/zeppelin-server.yaml.bk
+new file mode 100644
+index 000000000..eba48e38d
+--- /dev/null
++++ b/k8s/zeppelin-server.yaml.bk
+@@ -0,0 +1,227 @@
++#
++# Licensed to the Apache Software Foundation (ASF) under one or more
++# contributor license agreements.  See the NOTICE file distributed with
++# this work for additional information regarding copyright ownership.
++# The ASF licenses this file to You under the Apache License, Version 2.0
++# (the "License"); you may not use this file except in compliance with
++# the License.  You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++#
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: zeppelin-server-conf-map
++data:
++  # 'serviceDomain' is a Domain name to use for accessing Zeppelin UI.
++  # Should point IP address of 'zeppelin-server' service.
++  #
++  # Wildcard subdomain need to be point the same IP address to access service inside of Pod (such as SparkUI).
++  # i.e. if service domain is 'local.zeppelin-project.org', DNS configuration should make 'local.zeppelin-project.org' and '*.local.zeppelin-project.org' point the same address.
++  #
++  # Default value is 'local.zeppelin-project.org' while it points 127.0.0.1 and `kubectl port-forward zeppelin-server` will give localhost to connects.
++  # If you have your ingress controller configured to connect to `zeppelin-server` service and have a domain name for it (with wildcard subdomain point the same address), you can replace serviceDomain field with your own domain.
++  SERVICE_DOMAIN: local.zeppelin-project.org:8080
++  ZEPPELIN_K8S_SPARK_CONTAINER_IMAGE: spark:2.4.5
++  ZEPPELIN_K8S_CONTAINER_IMAGE: zeppelin-interpreter:0.11.0-SNAPSHOT
++  ZEPPELIN_HOME: /opt/zeppelin
++  ZEPPELIN_SERVER_RPC_PORTRANGE: 12320:12320
++  # default value of 'master' property for spark interpreter.
++  SPARK_MASTER: k8s://https://kubernetes.default.svc
++  # default value of 'SPARK_HOME' property for spark interpreter.
++  SPARK_HOME: /spark
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: zeppelin-server-conf
++data:
++  nginx.conf: |
++    daemon off;
++    worker_processes auto;
++    events {
++      worker_connections 1024;
++    }
++    http {
++      map $http_upgrade $connection_upgrade {
++        default upgrade;
++        '' close;
++      }
++
++      # first server block will be default. Proxy zeppelin server.
++      server {
++        listen 80;
++        location / {
++          proxy_pass http://localhost:8080;
++          proxy_set_header Host $host;
++          proxy_http_version 1.1;
++          proxy_set_header Upgrade $http_upgrade;
++          proxy_set_header Connection $connection_upgrade;
++          proxy_redirect http://localhost $scheme://SERVICE_DOMAIN;
++        }
++      }
++
++      # match request domain [port]-[service].[serviceDomain]
++      # proxy extra service such as spark-ui
++      server {
++        listen 80;
++        server_name "~(?<svc_port>[0-9]+)-(?<svc_name>[^.]*)\.(.*)";
++        location / {
++          resolver 127.0.0.1:53 ipv6=off;
++          proxy_pass http://$svc_name.NAMESPACE.svc:$svc_port;
++          proxy_set_header Host $host;
++          proxy_http_version 1.1;
++          proxy_set_header Upgrade $http_upgrade;
++          proxy_set_header Connection $connection_upgrade;
++          proxy_redirect http://localhost $scheme://SERVICE_DOMAIN;
++
++          # redirect rule for spark ui. 302 redirect response misses port number of service domain
++          proxy_redirect ~(http:[/]+[0-9]+[-][^-]+[-][^.]+)[^/]+(\/jobs.*) $1.SERVICE_DOMAIN$2;
++        }
++      }
++    }
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: zeppelin-server
++  labels:
++    app.kubernetes.io/name: zeppelin-server
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: zeppelin-server
++  strategy:
++    type: RollingUpdate
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/name: zeppelin-server
++    spec:
++      serviceAccountName: zeppelin-server
++      volumes:
++      - name: nginx-conf
++        configMap:
++          name: zeppelin-server-conf
++          items:
++          - key: nginx.conf
++            path: nginx.conf
++      containers:
++      - name: zeppelin-server
++        image: zeppelin-server:0.11.0-SNAPSHOT
++        command: ["sh", "-c", "$(ZEPPELIN_HOME)/bin/zeppelin.sh"]
++        lifecycle:
++          preStop:
++            exec:
++              # SIGTERM triggers a quick exit; gracefully terminate instead
++              command: ["sh", "-c", "ps -ef | grep org.apache.zeppelin.server.ZeppelinServer | grep -v grep | awk '{print $2}' | xargs kill"]
++        ports:
++        - name: http
++          containerPort: 8080
++        - name: https
++          containerPort: 8443
++        - name: rpc
++          containerPort: 12320
++        env:
++        - name: POD_UID
++          valueFrom:
++            fieldRef:
++              apiVersion: v1
++              fieldPath: metadata.uid
++        - name: POD_NAME
++          valueFrom:
++            fieldRef:
++              apiVersion: v1
++              fieldPath: metadata.name
++        envFrom:
++        - configMapRef:
++            name: zeppelin-server-conf-map
++      # volumeMounts:
++      #  - name: zeppelin-server-notebook-volume     # configure this to persist notebook
++      #    mountPath: /zeppelin/notebook
++      #  - name: zeppelin-server-conf                # configure this to persist Zeppelin configuration
++      #    mountPath: /zeppelin/conf
++      #  - name: zeppelin-server-custom-k8s          # configure this to mount customized Kubernetes spec for interpreter
++      #    mountPath: /zeppelin/k8s
++      - name: zeppelin-server-gateway
++        image: nginx:1.14.0
++        command: ["/bin/sh", "-c"]
++        env:
++        - name: SERVICE_DOMAIN
++          valueFrom:
++            configMapKeyRef:
++              name: zeppelin-server-conf-map
++              key: SERVICE_DOMAIN
++        args:
++          - cp -f /tmp/conf/nginx.conf /etc/nginx/nginx.conf;
++            sed -i -e "s/SERVICE_DOMAIN/$SERVICE_DOMAIN/g" /etc/nginx/nginx.conf;
++            sed -i -e "s/NAMESPACE/$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)/g" /etc/nginx/nginx.conf;
++            cat /etc/nginx/nginx.conf;
++            /usr/sbin/nginx
++        volumeMounts:
++          - name: nginx-conf
++            mountPath: /tmp/conf
++        lifecycle:
++          preStop:
++            exec:
++              # SIGTERM triggers a quick exit; gracefully terminate instead
++              command: ["/usr/sbin/nginx", "-s", "quit"]
++      - name: dnsmasq  # nginx requires dns resolver for dynamic dns resolution
++        image: "janeczku/go-dnsmasq:release-1.0.5"
++        args:
++          - --listen
++          - "127.0.0.1:53"
++          - --default-resolver
++          - --append-search-domains
++          - --hostsfile=/etc/hosts
++          - --verbose
++---
++kind: Service
++apiVersion: v1
++metadata:
++  name: zeppelin-server
++spec:
++  ports:
++    - name: http
++      port: 80
++    - name: rpc            # port name is referenced in the code. So it shouldn't be changed.
++      port: 12320
++  selector:
++    app.kubernetes.io/name: zeppelin-server
++---
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: zeppelin-server
++---
++kind: ClusterRole
++apiVersion: rbac.authorization.k8s.io/v1
++metadata:
++  name: zeppelin-server-role
++rules:
++- apiGroups: [""]
++  resources: ["pods", "services", "configmaps"]
++  verbs: ["create", "get", "update", "patch", "list", "delete", "watch"]
++- apiGroups: ["rbac.authorization.k8s.io"]
++  resources: ["roles", "rolebindings"]
++  verbs: ["bind", "create", "get", "update", "patch", "list", "delete", "watch"]
++---
++kind: RoleBinding
++apiVersion: rbac.authorization.k8s.io/v1
++metadata:
++  name: zeppelin-server-role-binding
++  namespace: default
++subjects:
++- kind: ServiceAccount
++  name: zeppelin-server
++roleRef:
++  kind: ClusterRole
++  name: zeppelin-server-role
++  apiGroup: rbac.authorization.k8s.io
+diff --git a/mvnw b/mvnw
+index 41c0f0c23..bbe57bd19 100755
+--- a/mvnw
++++ b/mvnw
+@@ -33,7 +33,7 @@
+ #       set MAVEN_OPTS=-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=8000
+ #   MAVEN_SKIP_RC - flag to disable loading of mavenrc files
+ # ----------------------------------------------------------------------------
+-
++set -x
+ if [ -z "$MAVEN_SKIP_RC" ] ; then
+ 
+   if [ -f /etc/mavenrc ] ; then
+diff --git a/scripts/docker/zeppelin-interpreter/Dockerfile b/scripts/docker/zeppelin-interpreter/Dockerfile
+index 8779982ac..83e825d93 100644
+--- a/scripts/docker/zeppelin-interpreter/Dockerfile
++++ b/scripts/docker/zeppelin-interpreter/Dockerfile
+@@ -13,14 +13,14 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-ARG ZEPPELIN_DISTRIBUTION_IMAGE=zeppelin-distribution:latest
++ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.11.0-SNAPSHOT
+ FROM $ZEPPELIN_DISTRIBUTION_IMAGE AS zeppelin-distribution
+ 
+ FROM ubuntu:20.04
+ 
+ LABEL maintainer="Apache Software Foundation <dev@zeppelin.apache.org>"
+ 
+-ARG version="0.10.0"
++ARG version="0.11.0-SNAPSHOT"
+ 
+ ENV VERSION="${version}" \
+     ZEPPELIN_HOME="/opt/zeppelin"
+@@ -54,6 +54,8 @@ COPY conda_packages.txt /conda_packages.txt
+ # Some python packages are not available via conda, so we are using pip
+ COPY pip_packages.txt /pip_packages.txt
+ RUN set -ex && \
++    export http_proxy="http://child-prc.intel.com:913/" && \
++    export https_proxy="http://child-prc.intel.com:913/" && \
+     wget -nv https://repo.anaconda.com/miniconda/Miniconda3-${miniconda_version}-Linux-x86_64.sh -O miniconda.sh && \
+     echo "${miniconda_sha256} miniconda.sh" > anaconda.sha256 && \
+     sha256sum --strict -c anaconda.sha256 && \
+diff --git a/scripts/docker/zeppelin-server/Dockerfile b/scripts/docker/zeppelin-server/Dockerfile
+index 1e1c9c374..6ff0fb6ea 100644
+--- a/scripts/docker/zeppelin-server/Dockerfile
++++ b/scripts/docker/zeppelin-server/Dockerfile
+@@ -13,7 +13,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-ARG ZEPPELIN_DISTRIBUTION_IMAGE=zeppelin-distribution:latest
++ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.11.0-SNAPSHOT
+ FROM $ZEPPELIN_DISTRIBUTION_IMAGE AS zeppelin-distribution
+ 
+ # Prepare all interpreter settings for Zeppelin server
+@@ -36,7 +36,7 @@ RUN set -ex && \
+     apt-get autoclean && \
+     apt-get clean
+ 
+-ARG version="0.10.0"
++ARG version="0.11.0-SNAPSHOT"
+ 
+ ENV LANG=en_US.UTF-8 \
+     LC_ALL=en_US.UTF-8 \
+diff --git a/scripts/docker/zeppelin-server/Dockerfile.bk b/scripts/docker/zeppelin-server/Dockerfile.bk
+new file mode 100644
+index 000000000..35f9dd0fc
+--- /dev/null
++++ b/scripts/docker/zeppelin-server/Dockerfile.bk
+@@ -0,0 +1,85 @@
++# Licensed to the Apache Software Foundation (ASF) under one or more
++# contributor license agreements.  See the NOTICE file distributed with
++# this work for additional information regarding copyright ownership.
++# The ASF licenses this file to You under the Apache License, Version 2.0
++# (the "License"); you may not use this file except in compliance with
++# the License.  You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++ARG ZEPPELIN_DISTRIBUTION_IMAGE=10.239.45.10/arda/zeppelin:0.10.1
++FROM $ZEPPELIN_DISTRIBUTION_IMAGE AS zeppelin-distribution
++
++# Prepare all interpreter settings for Zeppelin server
++# This steps are not needed, if you you add only specific interpreters settings to your image
++FROM alpine:3.11 AS interpreter-settings
++COPY --from=zeppelin-distribution /opt/zeppelin/interpreter /tmp/interpreter
++RUN mkdir -p /opt/zeppelin/interpreter && \
++    cd /tmp/interpreter && \
++    find . -name 'interpreter-setting.json' -exec cp --parents \{\} /opt/zeppelin/interpreter \;
++
++FROM ubuntu:20.04
++LABEL maintainer="Apache Software Foundation <dev@zeppelin.apache.org>"
++
++RUN set -ex && \
++    apt-get -y update && \
++    # Install language and other base packages
++    DEBIAN_FRONTEND=noninteractive apt-get install -y language-pack-en openjdk-8-jre-headless tini wget && \
++    # Cleanup
++    rm -rf /var/lib/apt/lists/* && \
++    apt-get autoclean && \
++    apt-get clean
++
++ARG version="0.10.1"
++
++ENV LANG=en_US.UTF-8 \
++    LC_ALL=en_US.UTF-8 \
++    JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64 \
++    VERSION="${version}" \
++    HOME="/opt/zeppelin" \
++    ZEPPELIN_HOME="/opt/zeppelin" \
++    ZEPPELIN_ADDR="0.0.0.0" \
++    ZEPPELIN_WAR_TEMPDIR="/tmp/webapps"
++
++# Copy Zeppelin related files
++COPY --from=zeppelin-distribution //opt/zeppelin/zeppelin-web-${VERSION}.war ${ZEPPELIN_HOME}/
++COPY --from=zeppelin-distribution /opt/zeppelin/zeppelin-web-angular-${VERSION}.war ${ZEPPELIN_HOME}/
++COPY --from=zeppelin-distribution /opt/zeppelin/conf ${ZEPPELIN_HOME}/conf
++COPY --from=zeppelin-distribution /opt/zeppelin/bin ${ZEPPELIN_HOME}/bin
++COPY --from=zeppelin-distribution /opt/zeppelin/lib ${ZEPPELIN_HOME}/lib
++COPY --from=zeppelin-distribution /opt/zeppelin/plugins ${ZEPPELIN_HOME}/plugins
++COPY --from=zeppelin-distribution /opt/zeppelin/interpreter/zeppelin-interpreter-shaded-${VERSION}.jar ${ZEPPELIN_HOME}/interpreter/zeppelin-interpreter-shaded-${VERSION}.jar
++# copy example notebooks
++COPY --from=zeppelin-distribution /opt/zeppelin/notebook ${ZEPPELIN_HOME}/notebook
++# copy k8s files
++COPY --from=zeppelin-distribution /opt/zeppelin/k8s ${ZEPPELIN_HOME}/k8s
++
++# Decide
++## 1) Copy and activate all interpreters (default)
++COPY --from=interpreter-settings /opt/zeppelin/interpreter ${ZEPPELIN_HOME}/interpreter
++## 2) Copy and activate only a specific set of interpreter
++# COPY --from=zeppelin-distribution /opt/zeppelin/interpreter/spark/interpreter-setting.json ${ZEPPELIN_HOME}/interpreter/spark/interpreter-setting.json
++# COPY --from=zeppelin-distribution /opt/zeppelin/interpreter/jdbc/interpreter-setting.json ${ZEPPELIN_HOME}/interpreter/jdbc/interpreter-setting.json
++# COPY --from=zeppelin-distribution /opt/zeppelin/interpreter/md/interpreter-setting.json ${ZEPPELIN_HOME}/interpreter/md/interpreter-setting.json
++
++COPY log4j.properties ${ZEPPELIN_HOME}/conf/
++
++RUN mkdir -p "${ZEPPELIN_HOME}/logs" "${ZEPPELIN_HOME}/run" "${ZEPPELIN_HOME}/notebook" "${ZEPPELIN_HOME}/local-repo" && \
++     # Allow process to edit /etc/passwd, to create a user entry for zeppelin
++    chgrp root /etc/passwd && chmod ug+rw /etc/passwd && \
++    # Give access to some specific folders
++    chmod -R 775 "${ZEPPELIN_HOME}/logs" "${ZEPPELIN_HOME}/run" "${ZEPPELIN_HOME}/conf" "${ZEPPELIN_HOME}/notebook" "${ZEPPELIN_HOME}/local-repo"
++
++USER 1000
++
++EXPOSE 8080
++
++ENTRYPOINT [ "/usr/bin/tini", "--" ]
++WORKDIR ${ZEPPELIN_HOME}
++CMD ["bin/zeppelin.sh"]
+diff --git a/spark/interpreter/src/main/resources/interpreter-setting.json b/spark/interpreter/src/main/resources/interpreter-setting.json
+index 5ba5f23bf..89a5e6395 100644
+--- a/spark/interpreter/src/main/resources/interpreter-setting.json
++++ b/spark/interpreter/src/main/resources/interpreter-setting.json
+@@ -8,7 +8,7 @@
+       "SPARK_HOME": {
+         "envName": "SPARK_HOME",
+         "propertyName": "SPARK_HOME",
+-        "defaultValue": "",
++        "defaultValue": "/ppml/spark-3.1.3",
+         "description": "Location of spark distribution",
+         "type": "string"
+       },
+@@ -161,6 +161,104 @@
+         "defaultValue": true,
+         "description": "Whether show the spark deprecated message, spark 2.2 and before are deprecated. Zeppelin will display warning message by default",
+         "type": "checkbox"
++      },
++      "spark.kubernetes.sgx.enabled": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.enabled",
++        "defaultValue": true,
++        "description": "Whether spark executor run on sgx",
++        "type": "checkbox"
++      },
++      "spark.kubernetes.sgx.driver.mem": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.driver.mem",
++        "defaultValue": "2g",
++        "description": "Amount of memory to use for the driver process on sgx",
++        "type": "string"
++      },
++      "spark.kubernetes.sgx.driver.jvm.mem": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.driver.jvm.mem",
++        "defaultValue": "2g",
++        "description": "Amount of memory to use for the driver jvm on sgx",
++        "type": "string"  
++      },
++      "spark.kubernetes.sgx.executor.mem": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.executor.mem",
++        "defaultValue": "2g",
++        "description": "Amount of memory to use for the executor process on sgx",
++        "type": "string"
++      },
++      "spark.kubernetes.sgx.executor.jvm.mem": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.executor.jvm.mem",
++        "defaultValue": "2g",
++        "description": "Amount of memory to use for the executor jvm on sgx",
++        "type": "string"
++      },
++      "spark.kubernetes.sgx.log.level": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.sgx.log.level",
++        "defaultValue": "error",
++        "description": "Describe the type and severity of a logged event based on the severity of the impact on users and the urgency of response",
++        "type": "string"
++      },
++      "spark.network.timeout": {
++        "envName": null,
++        "propertyName": "spark.network.timeout",
++        "defaultValue": "10000000",
++        "description": "How long you are willing to wait for an operation in a Workstation client before your request for that operation is canceled",
++        "type": "number"
++      },
++      "spark.executor.heartbeatInterval": {
++        "envName": null,
++        "propertyName": "spark.executor.heartbeatInterval",
++        "defaultValue": "10000000",
++        "description": "Interval to probe the status of executor",
++        "type": "number" 
++      },
++      "spark.python.use.daemon": {
++        "envName": null,
++        "propertyName": "spark.python.use.daemon",
++        "defaultValue": false,
++        "description": "Because forking processes from Java is expensive, we prefer to launch a single Python daemon, in this case, we set it to false",
++        "type": "checkbox"
++      },
++      "spark.python.worker.reuse": {
++        "envName": null,
++        "propertyName": "spark.python.worker.reuse",
++        "defaultValue": false,
++        "description": "Reuse Python worker or not. If yes, it will use a fixed number of Python workers, does not need to fork() a Python process for every task.",
++        "type": "checkbox"
++      },
++      "spark.kubernetes.authenticate.driver.serviceAccountName": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.authenticate.driver.serviceAccountName",
++        "defaultValue": "spark",
++        "description": "Specify a custom service account that has the right role granted.",
++        "type": "string"
++      },
++      "spark.kubernetes.executor.deleteOnTermination": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.executor.deleteOnTermination",
++        "defaultValue": false,
++        "description": "Specify whether executor pods should be deleted in case of failure or normal termination",
++        "type": "checkbox"
++      },
++      "spark.kubernetes.driver.podTemplateFile": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.driver.podTemplateFile",
++        "defaultValue": "/ppml/spark-driver-template.yaml",
++        "description": "Specify the local file that contains the driver pod template.",
++        "type": "string"
++      },
++      "spark.kubernetes.executor.podTemplateFile": {
++        "envName": null,
++        "propertyName": "spark.kubernetes.executor.podTemplateFile",
++        "defaultValue": "/ppml/spark-executor-template.yaml",
++        "description": "Specify the local file that contains the executor pod template.",
++        "type": "string"
+       }
+     },
+     "editor": {
+\ No newline at end of file
